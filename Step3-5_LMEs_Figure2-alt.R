@@ -8,7 +8,6 @@ library(nlme)
 library(emmeans)
 library(conflicted)
 
-#=============================================================
 # Be sure to run Step1_Munging.R first
 bmb_lme = bmb %>%
   # filter(doy>128) %>%
@@ -31,9 +30,10 @@ low2 = "royalblue3"
 no1 = "gray60"
 no2 = "gray30" 
 
+# LME Analysis # ================================
 # Model comparing changes in chlorophyll, zooplankton biomass, zooplankton abundance weighted mean-length # 
   # 3 treatments - nofish, ambient, harvested # 
-#=========== Chlorophyll #===================
+##=========== Chlorophyll #===================
 # Load the nlme library
 library(nlme)
 
@@ -43,7 +43,7 @@ bmb_lme$treatment <- as.factor(bmb_lme$treatment)
 
 # Model 1: Random Intercept for Pond
 mod_intercept <- lme(log_chl ~ treatment * log_doy, 
-                     random = ~1 | pond,  # <--- This is the key change
+                     random = ~1 | pond,  
                      weights = varIdent(form = ~1 | treatment),
                      data = bmb_lme, 
                      na.action = na.omit)
@@ -55,7 +55,7 @@ summary(mod_intercept)
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 bmb_lme$log_doy_c <- bmb_lme$log_doy - mean_log_doy
 
-# 3. Re-run your model with the new centered variable
+# Re-run model with the new centered variable
 mod1 <- lme(log_chl ~ treatment * log_doy_c,  # <-- Use the new variable
                  random = ~1 | pond,
                  weights = varIdent(form = ~1 | treatment),
@@ -72,27 +72,13 @@ summary(mod1)
 # Slope here is on a log-log scale, so looking at the percent change in chl for a 1% change in DOY.
 
 # Interactions (Note: Intercepts are at the *average* time point, not Day 1)
-  # No Fish (reference): Strong decline over time in log_chl (p < 0.0001); Intercept = 0.44, Slope = -7.77
-  # Ambient: Significantly higher intercept at avg. time (+0.55, p = 0.026), but shows the slowest decline (Slope = -3.37; interaction p < 0.0001)
-  # Harvested: Intercept not different from nofish (p = 0.63), with a moderate decline (Slope = -5.38; interaction p = 0.014)
-
-# Brass Tax
-  # The main story is the *change over time* (the slopes):
-  #   All ponds show a significant decline in chlorophyll.
-  #   The 'nofish' ponds had the fastest decline (slope = -7.77).
-  #   The 'harvested' ponds moderated that decline (slope = -5.38).
-  #   The 'ambient' ponds had the slowest decline (slope = -3.37).
-  #
-  # At the *average* time point of the experiment (the "intercept"):
-  #   'ambient' ponds had significantly *higher* chlorophyll than 'nofish' ponds.
-  #   'harvested' and 'nofish' ponds were not different from each other.
-
-# 1a. Create the x-axis values for prediction
+  
+#Create the x-axis values for prediction
 doy_seq <- seq(min(bmb_lme$doy, na.rm = TRUE), 
                max(bmb_lme$doy, na.rm = TRUE), 
                by = 1)
 
-# **CRITICAL STEP**: Get the same mean used to center your original data
+# Get the same mean used to center original data
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 
 # Create the new data grid for prediction
@@ -101,15 +87,15 @@ newdata1 <- expand.grid(
   treatment = levels(bmb_lme$treatment)
 )
 
-# **CRITICAL STEP**: Create the centered predictor variable for the new data
+#  Create the centered predictor variable for the new data
 newdata1$log_doy_c <- log(newdata1$doy) - mean_log_doy
 
-# 1b. Fixed-effects estimates and variance-covariance matrix
+# Fixed-effects estimates and variance-covariance matrix
 beta <- fixef(mod1)
 Vbeta <- vcov(mod1)
 
-# 1c. Model matrix for newdata1
-# **CRITICAL CHANGE**: Update the formula to match your model
+# Model matrix for newdata1
+# Update the formula to match  model
 Xnew <- model.matrix(~ treatment * log_doy_c, data = newdata1)
 
 # 1d. Predicted fit (fixed effects only) and standard errors
@@ -118,29 +104,28 @@ se_fit <- sqrt( diag( Xnew %*% Vbeta %*% t(Xnew) ) )
 newdata1$lower <- newdata1$fit - 1.96 * se_fit
 newdata1$upper <- newdata1$fit + 1.96 * se_fit
 
-# 1e. Plot with ggplot2 (This code is unchanged)
-# (Assuming you have your color variables no1, high1, etc. in your environment)
+# plot check 
 windows(height = 6, width = 8)
 ggplot(newdata1, aes(x = doy, y = fit, color = treatment, fill = treatment)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) + 
   geom_line(size = 2) +
   labs(
     x = "Day of Year", 
-    y = "Predicted log(Chlorophyll)", # **NOTE**: Your Y-axis is log_chl
+    y = "Predicted log(Chlorophyll)", #  Y-axis is log_chl
     color = "Treatment", fill = "Treatment"
   ) +
   theme_minimal() +
   scale_color_manual(values = c(no1, high1, low1)) +
   scale_fill_manual(values = c(no2, high2, low2))
 
-# 2a. Extract standardized (normalized) residuals and fitted values
+# Extract standardized (normalized) residuals and fitted values
 data_used1 <- getData(mod1) 
 dim(data_used1)
 
 data_used1$resid_std <- resid(mod1, type = "normalized")
 data_used1$fitted    <- fitted(mod1)
 
-# 2b. Identify observations with |resid_std| > 2
+# Identify observations with |resid_std| > 2
 outliers <- subset(data_used1, abs(resid_std) > 2)
 unique(outliers$doy) 
 
@@ -158,11 +143,11 @@ chl_trends_compare <- emtrends(mod1,
                               pairwise ~ treatment,  # Get pairwise differences
                               var = "log_doy_c")
 
-# 2. Convert the *contrasts* to a data frame
+# Convert the contrasts to a data frame
 slope_comparisons <- as.data.frame(summary(chl_trends_compare$contrasts, infer = T))
 pairwise_chla_comparisons <- slope_comparisons
 
-# 3. Create the ball-and-whisker plot
+# Create the ball-and-whisker plot
 ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   geom_point(size = 3) +
   geom_errorbarh(aes(xmin = lower.CL, xmax = upper.CL), height = 0.2) +
@@ -178,7 +163,7 @@ ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   theme_minimal()
 text(6.75, 6.6, "B", font = 2)
 
-#=========== zooplankton biomass  #===================
+##=========== zooplankton biomass  #===================
 mod2 <- lme(log_zp ~ treatment * log_doy_c,  # <-- Use the new variable
                  random = ~1 | pond,
                  weights = varIdent(form = ~1 | treatment),
@@ -194,28 +179,12 @@ summary(mod2)
 
 # Slope here is on a log-log scale, so looking at the percent change in length for a 1% change in DOY.
 
-# Interactions (Note: Intercepts are at the *average* time point)
-  # No Fish (reference): Strong, significant increase over time (p < 0.0001); Intercept = 3.68, Slope = +5.42
-  # Ambient: Intercept significantly lower (–0.46, p = 0.011), with a slope near zero (Slope = +5.42 - 5.27 = +0.15; interaction p < 0.0001)
-  # Harvested: Intercept not different from nofish (p = 0.064), with a significant moderate increase (Slope = +5.42 - 2.68 = +2.74; interaction p = 0.0005)
-
-# Brass Tax
-  # The main story is the *change over time* (the slopes):
-  #   The 'nofish' ponds showed a strong, significant *increase* in length over time.
-  #   In contrast, both 'ambient' and 'harvested' ponds showed significantly *slower* rates of increase.
-  #   The 'ambient' ponds had the slowest rate of change (slope = +0.15).
-  #   The 'harvested' ponds had a moderate rate of increase (slope = +2.74).
-  #
-  # At the *average* time point of the experiment (the "intercept"):
-  #   'ambient' ponds had significantly *lower* length values than 'nofish' ponds.
-  #   'harvested' and 'nofish' ponds were not significantly different.
-
 # 1a. Create the x-axis values for prediction
 doy_seq <- seq(min(bmb_lme$doy, na.rm = TRUE), 
                max(bmb_lme$doy, na.rm = TRUE), 
                by = 1)
 
-# **CRITICAL STEP**: Get the same mean used to center your original data
+#  Get the same mean used to center original data
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 
 # Create the new data grid for prediction
@@ -224,46 +193,46 @@ newdata2 <- expand.grid(
   treatment = levels(bmb_lme$treatment)
 )
 
-# **CRITICAL STEP**: Create the centered predictor variable for the new data
+# Create the centered predictor variable for the new data
 newdata2$log_doy_c <- log(newdata2$doy) - mean_log_doy
 
-# 1b. Fixed-effects estimates and variance-covariance matrix
+# Fixed-effects estimates and variance-covariance matrix
 beta <- fixef(mod2)
 Vbeta <- vcov(mod2)
 
-# 2c. Model matrix for newdata1
-# **CRITICAL CHANGE**: Update the formula to match your model
+#Model matrix for newdata1
+#  Update the formula to match model
 Xnew <- model.matrix(~ treatment * log_doy_c, data = newdata2)
 
-# 1d. Predicted fit (fixed effects only) and standard errors
+#  Predicted fit (fixed effects only) and standard errors
 newdata2$fit <- as.vector(Xnew %*% beta)
 se_fit <- sqrt( diag( Xnew %*% Vbeta %*% t(Xnew) ) )
 newdata2$lower <- newdata2$fit - 1.96 * se_fit
 newdata2$upper <- newdata2$fit + 1.96 * se_fit
 
-# 1e. Plot with ggplot2 (This code is unchanged)
-# (Assuming you have your color variables no1, high1, etc. in your environment)
+# Plot with ggplot2 
+
 windows(height = 6, width = 8)
 ggplot(newdata2, aes(x = doy, y = fit, color = treatment, fill = treatment)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) + 
   geom_line(size = 2) +
   labs(
     x = "Day of Year", 
-    y = "Predicted log(Length)", # **NOTE**: Your Y-axis is log_zp
+    y = "Predicted log(Length)", #  Y-axis is log_zp
     color = "Treatment", fill = "Treatment"
   ) +
   theme_minimal() +
   scale_color_manual(values = c(no1, high1, low1)) +
   scale_fill_manual(values = c(no2, high2, low2))
 
-# 2a. Extract standardized (normalized) residuals and fitted values
+#  Extract standardized (normalized) residuals and fitted values
 data_used2 <- getData(mod2) 
 dim(data_used2)
 
 data_used2$resid_std <- resid(mod2, type = "normalized")
 data_used2$fitted    <- fitted(mod2)
 
-# 2b. Identify observations with |resid_std| > 2
+#  Identify observations with |resid_std| > 2
 outliers <- subset(data_used2, abs(resid_std) > 2)
 unique(outliers$doy) 
 
@@ -281,11 +250,11 @@ zp_trends_compare <- emtrends(mod2,
                               pairwise ~ treatment,  # Get pairwise differences
                               var = "log_doy_c")
 
-# 2. Convert the *contrasts* to a data frame
+# Convert the contrasts to a data frame
 slope_comparisons <- as.data.frame(summary(zp_trends_compare$contrasts, infer = T))
 pairwise_zoop_slopes <- slope_comparisons
 
-# 3. Create the ball-and-whisker plot
+# Create the ball-and-whisker plot
 ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   geom_point(size = 3) +
   geom_errorbarh(aes(xmin = lower.CL, xmax = upper.CL), height = 0.2) +
@@ -301,7 +270,7 @@ ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   theme_minimal()
 text(9.85, 6.6, "D", font = 2)
 
-#=========== Zooplankton Community Length  #===================
+##=========== Zooplankton Community Length  #===================
 mod3 <- lme(log_length ~ treatment * log_doy_c,  # <-- Use the new variable
                  random = ~1 | pond,
                  weights = varIdent(form = ~1 | treatment),
@@ -317,27 +286,13 @@ summary(mod3)
 
 # Slope here is on a log-log scale, so looking at the percent change in length for a 1% change in DOY.
 
-# Interactions (Note: Intercepts are at the *average* time point)
-  # No Fish (reference): Strong, significant growth over time (p < 0.001); Intercept = 3.68, Slope = +5.42
-  # Ambient: Significantly shorter at avg. time (–0.46, p = 0.011), with growth almost completely halted (Slope = +0.15; interaction p < 0.001)
-  # Harvested: Intercept not different from nofish (p = 0.064), with significantly slower growth (Slope = +2.74; interaction p = 0.0005)
-
-# Brass Tax
-  # The main story is the *growth rate* (the slopes):
-  #   The 'nofish' ponds (control) showed strong, rapid growth over time (slope = +5.42).
-  #   The 'harvested' ponds significantly reduced this growth rate by about half (slope = +2.74).
-  #   The 'ambient' ponds had the most dramatic effect, almost completely stopping growth (slope = +0.15).
-  #
-  # At the *average* time point of the experiment (the "intercept"):
-  #   Fish in the 'ambient' ponds were significantly *shorter* than fish in the 'nofish' ponds.
-  #   Fish in the 'harvested' and 'nofish' ponds were not significantly different in length.
 
 # 1a. Create the x-axis values for prediction
 doy_seq <- seq(min(bmb_lme$doy, na.rm = TRUE), 
                max(bmb_lme$doy, na.rm = TRUE), 
                by = 1)
 
-# **CRITICAL STEP**: Get the same mean used to center your original data
+#  Get the same mean used to center original data
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 
 # Create the new data grid for prediction
@@ -346,46 +301,45 @@ newdata3 <- expand.grid(
   treatment = levels(bmb_lme$treatment)
 )
 
-# **CRITICAL STEP**: Create the centered predictor variable for the new data
+#  Create the centered predictor variable for the new data
 newdata3$log_doy_c <- log(newdata3$doy) - mean_log_doy
 
-# 1b. Fixed-effects estimates and variance-covariance matrix
+# Fixed-effects estimates and variance-covariance matrix
 beta <- fixef(mod3)
 Vbeta <- vcov(mod3)
 
-# 1c. Model matrix for newdata1
-# **CRITICAL CHANGE**: Update the formula to match your model
+# Model matrix for newdata1
+# Update the formula to match model
 Xnew <- model.matrix(~ treatment * log_doy_c, data = newdata3)
 
-# 1d. Predicted fit (fixed effects only) and standard errors
+#  Predicted fit (fixed effects only) and standard errors
 newdata3$fit <- as.vector(Xnew %*% beta)
 se_fit <- sqrt( diag( Xnew %*% Vbeta %*% t(Xnew) ) )
 newdata3$lower <- newdata3$fit - 1.96 * se_fit
 newdata3$upper <- newdata3$fit + 1.96 * se_fit
 
-# 1e. Plot with ggplot2 (This code is unchanged)
-# (Assuming you have your color variables no1, high1, etc. in your environment)
+# plot
 windows(height = 6, width = 8)
 ggplot(newdata3, aes(x = doy, y = fit, color = treatment, fill = treatment)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) + 
   geom_line(size = 2) +
   labs(
     x = "Day of Year", 
-    y = "Predicted log(lengthorophyll)", # **NOTE**: Your Y-axis is log_length
+    y = "Predicted log(lengthorophyll)", #  Y-axis is log_length
     color = "Treatment", fill = "Treatment"
   ) +
   theme_minimal() +
   scale_color_manual(values = c(no1, high1, low1)) +
   scale_fill_manual(values = c(no2, high2, low2))
 
-# 2a. Extract standardized (normalized) residuals and fitted values
+#Extract standardized (normalized) residuals and fitted values
 data_used3 <- getData(mod3) 
 dim(data_used3)
 
 data_used3$resid_std <- resid(mod3, type = "normalized")
 data_used3$fitted    <- fitted(mod3)
 
-# 2b. Identify observations with |resid_std| > 2
+#  Identify observations with |resid_std| > 2
 outliers <- subset(data_used3, abs(resid_std) > 2)
 unique(outliers$doy) 
 
@@ -403,11 +357,11 @@ length_trends_compare <- emtrends(mod3,
                               pairwise ~ treatment,  # Get pairwise differences
                               var = "log_doy_c")
 
-# 2. Convert the *contrasts* to a data frame
+# Convert the contrasts to a data frame
 slope_comparisons <- as.data.frame(summary(length_trends_compare$contrasts, infer = T))
 pairwise_length_slopes <- slope_comparisons
 
-# 3. Create the ball-and-whisker plot
+# Create the ball-and-whisker plot
 ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   geom_point(size = 3) +
   geom_errorbarh(aes(xmin = lower.CL, xmax = upper.CL), height = 0.2) +
@@ -423,7 +377,7 @@ ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   theme_minimal()
 text(2.6, 6.6, "F", font = 2)
 
-#========================= Recreate Wilcot Plot ======================================================
+#========================= Recreate Wilcot Plot Individually  ======================================================
 # loading in MASS earlier will now cause problems, just click dplyr over stats 
 datA <- bmb_lme %>% 
   filter(pond == "A") 
@@ -449,7 +403,7 @@ squircle_filled <- function(x0 = 0, y0 = 0, radius, stretch = 1.5, n = 1000, col
   polygon(x, y, col = col, border = border)
 }
 
-#========================= Chlorophyll ==================================
+##========================= Chlorophyll ==================================
 
 # no fish: pond A, D
 # harvested: pond C, E
@@ -540,7 +494,7 @@ text(166, log(28), "Ambient", col="white", font=2, cex = 1)
 
 text(169.2, log(110), "A", font = 2, cex = 1.5)
 
-#========================= Zooplankton Biomass ==================================
+##========================= Zooplankton Biomass ==================================
 
 # no fish: pond A, D
 # harvested: pond C, E
@@ -663,7 +617,7 @@ text(166, log(2300), "Ambient", col="white", font=2, cex = 1)
 
 text(169.2, log(11000), "C", font = 2, cex = 1.5)
 
-#========================= Zooplankton Length ==================================
+##========================= Zooplankton Length ==================================
 
 # no fish: pond A, D
 # harvested: pond C, E
@@ -779,9 +733,7 @@ text(146, log(114), "Ambient", col="white", font=2, cex = 1)
 
 text(169.2, log(210), "E", font = 2, cex = 1.5)
 
-# Put figures together in one strip of code # ======================================
-
-# Plot Dimensions # ========================
+# Plot in one string of code # ======================================
 windows(height = 8, width = 9)
 par(mar = c(1, 3, 2, 0.5), oma = c(4, 4, 0.5, 0.5), tcl = -0.25, mgp = c(2, 0.6, 0))
 layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), nrow = 3, byrow = TRUE)
@@ -884,11 +836,11 @@ chl_trends_compare <- emtrends(mod1,
                                pairwise ~ treatment,
                                var = "log_doy_c")
 
-# 2. Convert the *SUMMARY* of the contrasts to a data frame with CIs
+# Convert the summary() of the contrasts to a data frame with CIs
 slope_comparisons <- as.data.frame(summary(chl_trends_compare$contrasts, infer = TRUE))
 
-# 4. Create the main plot area
-# We plot points but suppress the axes to draw them manually
+#  Create the main plot area
+# plot points but suppress the axes to draw them manually
 plot(x = slope_comparisons$estimate, 
      y = nrow(slope_comparisons):1,  # Plot from top to bottom
      xlim = range(slope_comparisons$lower.CL, slope_comparisons$upper.CL), # Set x-axis limits from data
@@ -902,7 +854,7 @@ plot(x = slope_comparisons$estimate,
      yaxt = "n", 
      col = "white")     # Suppress y-axis labels
 
-# 5. Add horizontal error bars (the "whiskers")
+# Add horizontal error bars (the "whiskers")
 arrows(x0 = slope_comparisons$lower.CL, 
        y0 = nrow(slope_comparisons):1, 
        x1 = slope_comparisons$upper.CL, 
@@ -911,12 +863,12 @@ arrows(x0 = slope_comparisons$lower.CL,
        code = 3,       # Puts flat ends on both sides
        length = 0.05)  # Sets the size of the flat ends
 
-# 6. Add the vertical reference line at zero
+# Add the vertical reference line at zero
 abline(v = 0, lty = 2, col = "gray40")  # Make labels horizontal
 
-# 8. Add the "B" label in the top right corner
-# Note: You may need to adjust x and y coordinates depending on your data range
-# We use par("usr") to get the coordinates of the plot region
+# Add the "B" label in the top right corner
+
+# use par("usr") to get the coordinates of the plot region
 plot_coords <- par("usr")
 text(x = plot_coords[2] * 0.95, # 95% to the right edge
      y = plot_coords[4] * 0.97, # 95% to the top edge
@@ -1054,11 +1006,10 @@ zp_trends_compare <- emtrends(mod2,
                                pairwise ~ treatment,
                                var = "log_doy_c")
 
-# 2. Convert the *SUMMARY* of the contrasts to a data frame with CIs
+# Convert the summary() of the contrasts to a data frame with CIs
 slope_comparisons <- as.data.frame(summary(zp_trends_compare$contrasts, infer = TRUE))
 
-# 4. Create the main plot area
-# We plot points but suppress the axes to draw them manually
+#  Create the main plot area
 plot(x = slope_comparisons$estimate, 
      y = nrow(slope_comparisons):1,  # Plot from top to bottom
      xlim = range(slope_comparisons$lower.CL, slope_comparisons$upper.CL), # Set x-axis limits from data
@@ -1072,7 +1023,7 @@ plot(x = slope_comparisons$estimate,
      yaxt = "n", 
      col = "white")     # Suppress y-axis labels
 
-# 5. Add horizontal error bars (the "whiskers")
+# Add horizontal error bars (the "whiskers")
 arrows(x0 = slope_comparisons$lower.CL, 
        y0 = nrow(slope_comparisons):1, 
        x1 = slope_comparisons$upper.CL, 
@@ -1081,12 +1032,12 @@ arrows(x0 = slope_comparisons$lower.CL,
        code = 3,       # Puts flat ends on both sides
        length = 0.05)  # Sets the size of the flat ends
 
-# 6. Add the vertical reference line at zero
+# Add the vertical reference line at zero
 abline(v = 0, lty = 2, col = "gray40")  # Make labels horizontal
 
-# 8. Add the "B" label in the top right corner
-# Note: You may need to adjust x and y coordinates depending on your data range
-# We use par("usr") to get the coordinates of the plot region
+# Add the "B" label in the top right corner
+
+# use par("usr") to get the coordinates of the plot region
 plot_coords <- par("usr")
 text(x = plot_coords[2] * 0.95, # 95% to the right edge
      y = plot_coords[4] * 0.97, # 95% to the top edge
@@ -1209,11 +1160,11 @@ length_trends_compare <- emtrends(mod3,
                                pairwise ~ treatment,
                                var = "log_doy_c")
 
-# 2. Convert the *SUMMARY* of the contrasts to a data frame with CIs
+# Convert the summary() of the contrasts to a data frame with CIs
 slope_comparisons <- as.data.frame(summary(length_trends_compare$contrasts, infer = TRUE))
 
-# 4. Create the main plot area
-# We plot points but suppress the axes to draw them manually
+#  Create the main plot area
+
 plot(x = slope_comparisons$estimate, 
      y = nrow(slope_comparisons):1,  # Plot from top to bottom
      xlim = range(slope_comparisons$lower.CL, slope_comparisons$upper.CL), # Set x-axis limits from data
@@ -1227,7 +1178,7 @@ plot(x = slope_comparisons$estimate,
      yaxt = "n", 
      col = "white")     # Suppress y-axis labels
 
-# 5. Add horizontal error bars (the "whiskers")
+# Add horizontal error bars (the "whiskers")
 arrows(x0 = slope_comparisons$lower.CL, 
        y0 = nrow(slope_comparisons):1, 
        x1 = slope_comparisons$upper.CL, 
@@ -1236,12 +1187,12 @@ arrows(x0 = slope_comparisons$lower.CL,
        code = 3,       # Puts flat ends on both sides
        length = 0.05)  # Sets the size of the flat ends
 
-# 6. Add the vertical reference line at zero
+# Add the vertical reference line at zero
 abline(v = 0, lty = 2, col = "gray40")  # Make labels horizontal
 
-# 8. Add the "B" label in the top right corner
-# Note: You may need to adjust x and y coordinates depending on your data range
-# We use par("usr") to get the coordinates of the plot region
+# Add the "B" label in the top right corner
+
+# use par("usr") to get the coordinates of the plot region
 plot_coords <- par("usr")
 text(x = plot_coords[2] * 0.95, # 95% to the right edge
      y = plot_coords[4] * 0.97, # 95% to the top edge
@@ -1300,10 +1251,9 @@ library(nlme)
 library(emmeans)
 library(conflicted)
 
-#=============================================================
 # Be sure to run Step1_Munging.R first
 bmb_lme = bmb %>%
-  filter(doy>128) %>%
+  filter(doy>128) %>% # now filtering out pre DOY 128 data 
   mutate(treatment = as_factor(treatment), 
          fishtreat = ordered(treatment, 
                              levels = c("nofish", "harvested", "ambient"))) %>% 
@@ -1326,7 +1276,7 @@ no2 = "gray30"
 
 # Model comparing changes in chlorophyll, zooplankton biomass, zooplankton abundance weighted mean-length # 
 # 3 treatments - nofish, ambient, harvested # 
-#=========== Chlorophyll #===================
+##=========== Chlorophyll #===================
 # Load the nlme library
 library(nlme)
 
@@ -1336,7 +1286,7 @@ bmb_lme$treatment <- as.factor(bmb_lme$treatment)
 
 # Model 1: Random Intercept for Pond
 mod_intercept <- lme(log_chl ~ treatment * log_doy, 
-                     random = ~1 | pond,  # <--- This is the key change
+                     random = ~1 | pond,  
                      weights = varIdent(form = ~1 | treatment),
                      data = bmb_lme, 
                      na.action = na.omit)
@@ -1348,7 +1298,7 @@ summary(mod_intercept)
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 bmb_lme$log_doy_c <- bmb_lme$log_doy - mean_log_doy
 
-# 3. Re-run your model with the new centered variable
+# 3. Re-run model with the new centered variable
 mod1 <- lme(log_chl ~ treatment * log_doy_c,  # <-- Use the new variable
             random = ~1 | pond,
             weights = varIdent(form = ~1 | treatment),
@@ -1385,7 +1335,7 @@ doy_seq <- seq(min(bmb_lme$doy, na.rm = TRUE),
                max(bmb_lme$doy, na.rm = TRUE), 
                by = 1)
 
-# **CRITICAL STEP**: Get the same mean used to center your original data
+#  Get the same mean used to center original data
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 
 # Create the new data grid for prediction
@@ -1394,7 +1344,7 @@ newdata1 <- expand.grid(
   treatment = levels(bmb_lme$treatment)
 )
 
-# **CRITICAL STEP**: Create the centered predictor variable for the new data
+#  Create the centered predictor variable for the new data
 newdata1$log_doy_c <- log(newdata1$doy) - mean_log_doy
 
 # 1b. Fixed-effects estimates and variance-covariance matrix
@@ -1402,7 +1352,7 @@ beta <- fixef(mod1)
 Vbeta <- vcov(mod1)
 
 # 1c. Model matrix for newdata1
-# **CRITICAL CHANGE**: Update the formula to match your model
+#  Update the formula to match model
 Xnew <- model.matrix(~ treatment * log_doy_c, data = newdata1)
 
 # 1d. Predicted fit (fixed effects only) and standard errors
@@ -1411,15 +1361,15 @@ se_fit <- sqrt( diag( Xnew %*% Vbeta %*% t(Xnew) ) )
 newdata1$lower <- newdata1$fit - 1.96 * se_fit
 newdata1$upper <- newdata1$fit + 1.96 * se_fit
 
-# 1e. Plot with ggplot2 (This code is unchanged)
-# (Assuming you have your color variables no1, high1, etc. in your environment)
+# 1e. Plot with ggplot2 
+
 windows(height = 6, width = 8)
 ggplot(newdata1, aes(x = doy, y = fit, color = treatment, fill = treatment)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) + 
   geom_line(size = 2) +
   labs(
     x = "Day of Year", 
-    y = "Predicted log(Chlorophyll)", # **NOTE**: Your Y-axis is log_chl
+    y = "Predicted log(Chlorophyll)", #  Y-axis is log_chl
     color = "Treatment", fill = "Treatment"
   ) +
   theme_minimal() +
@@ -1471,7 +1421,7 @@ ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   theme_minimal()
 text(6.75, 6.6, "B", font = 2)
 
-#=========== zooplankton biomass  #===================
+##=========== zooplankton biomass  #===================
 mod2 <- lme(log_zp ~ treatment * log_doy_c,  # <-- Use the new variable
             random = ~1 | pond,
             weights = varIdent(form = ~1 | treatment),
@@ -1508,7 +1458,7 @@ doy_seq <- seq(min(bmb_lme$doy, na.rm = TRUE),
                max(bmb_lme$doy, na.rm = TRUE), 
                by = 1)
 
-# **CRITICAL STEP**: Get the same mean used to center your original data
+#  Get the same mean used to center original data
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 
 # Create the new data grid for prediction
@@ -1517,7 +1467,7 @@ newdata2 <- expand.grid(
   treatment = levels(bmb_lme$treatment)
 )
 
-# **CRITICAL STEP**: Create the centered predictor variable for the new data
+#  Create the centered predictor variable for the new data
 newdata2$log_doy_c <- log(newdata2$doy) - mean_log_doy
 
 # 1b. Fixed-effects estimates and variance-covariance matrix
@@ -1525,7 +1475,7 @@ beta <- fixef(mod2)
 Vbeta <- vcov(mod2)
 
 # 2c. Model matrix for newdata1
-# **CRITICAL CHANGE**: Update the formula to match your model
+#  Update the formula to match model
 Xnew <- model.matrix(~ treatment * log_doy_c, data = newdata2)
 
 # 1d. Predicted fit (fixed effects only) and standard errors
@@ -1534,15 +1484,15 @@ se_fit <- sqrt( diag( Xnew %*% Vbeta %*% t(Xnew) ) )
 newdata2$lower <- newdata2$fit - 1.96 * se_fit
 newdata2$upper <- newdata2$fit + 1.96 * se_fit
 
-# 1e. Plot with ggplot2 (This code is unchanged)
-# (Assuming you have your color variables no1, high1, etc. in your environment)
+# 1e. Plot with ggplot2 
+
 windows(height = 6, width = 8)
 ggplot(newdata2, aes(x = doy, y = fit, color = treatment, fill = treatment)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) + 
   geom_line(size = 2) +
   labs(
     x = "Day of Year", 
-    y = "Predicted log(Length)", # **NOTE**: Your Y-axis is log_zp
+    y = "Predicted log(Length)", #  Y-axis is log_zp
     color = "Treatment", fill = "Treatment"
   ) +
   theme_minimal() +
@@ -1594,7 +1544,7 @@ ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   theme_minimal()
 text(9.85, 6.6, "D", font = 2)
 
-#=========== Zooplankton Community Length  #===================
+##=========== Zooplankton Community Length  #===================
 mod3 <- lme(log_length ~ treatment * log_doy_c,  # <-- Use the new variable
             random = ~1 | pond,
             weights = varIdent(form = ~1 | treatment),
@@ -1630,7 +1580,7 @@ doy_seq <- seq(min(bmb_lme$doy, na.rm = TRUE),
                max(bmb_lme$doy, na.rm = TRUE), 
                by = 1)
 
-# **CRITICAL STEP**: Get the same mean used to center your original data
+#  Get the same mean used to center original data
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 
 # Create the new data grid for prediction
@@ -1639,7 +1589,7 @@ newdata3 <- expand.grid(
   treatment = levels(bmb_lme$treatment)
 )
 
-# **CRITICAL STEP**: Create the centered predictor variable for the new data
+#  Create the centered predictor variable for the new data
 newdata3$log_doy_c <- log(newdata3$doy) - mean_log_doy
 
 # 1b. Fixed-effects estimates and variance-covariance matrix
@@ -1647,7 +1597,7 @@ beta <- fixef(mod3)
 Vbeta <- vcov(mod3)
 
 # 1c. Model matrix for newdata1
-# **CRITICAL CHANGE**: Update the formula to match your model
+#  Update the formula to match model
 Xnew <- model.matrix(~ treatment * log_doy_c, data = newdata3)
 
 # 1d. Predicted fit (fixed effects only) and standard errors
@@ -1656,15 +1606,15 @@ se_fit <- sqrt( diag( Xnew %*% Vbeta %*% t(Xnew) ) )
 newdata3$lower <- newdata3$fit - 1.96 * se_fit
 newdata3$upper <- newdata3$fit + 1.96 * se_fit
 
-# 1e. Plot with ggplot2 (This code is unchanged)
-# (Assuming you have your color variables no1, high1, etc. in your environment)
+# 1e. Plot with ggplot2 
+
 windows(height = 6, width = 8)
 ggplot(newdata3, aes(x = doy, y = fit, color = treatment, fill = treatment)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) + 
   geom_line(size = 2) +
   labs(
     x = "Day of Year", 
-    y = "Predicted log(lengthorophyll)", # **NOTE**: Your Y-axis is log_length
+    y = "Predicted log(lengthorophyll)", #  Y-axis is log_length
     color = "Treatment", fill = "Treatment"
   ) +
   theme_minimal() +
@@ -1716,7 +1666,7 @@ ggplot(slope_comparisons, aes(x = estimate, y = contrast)) +
   theme_minimal()
 text(2.6, 6.6, "F", font = 2)
 
-#========================= Recreate Wilcot Plot ======================================================
+#========================= Recreate Wilcot Plot Individually ======================================================
 # loading in MASS earlier will now cause problems, just click dplyr over stats 
 datA <- bmb_lme %>% 
   filter(pond == "A") 
@@ -1745,7 +1695,6 @@ squircle_filled <- function(x0 = 0, y0 = 0, radius, stretch = 1.5, n = 1000, col
 
 # Put figures together in one strip of code # ======================================
 
-# Plot Dimensions # ========================
 windows(height = 8, width = 9)
 par(mar = c(1, 3, 2, 0.5), oma = c(4, 4, 0.5, 0.5), tcl = -0.25, mgp = c(2, 0.6, 0))
 layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), nrow = 3, byrow = TRUE)
@@ -1852,7 +1801,7 @@ chl_trends_compare <- emtrends(mod1,
 slope_comparisons <- as.data.frame(summary(chl_trends_compare$contrasts, infer = TRUE))
 
 # 4. Create the main plot area
-# We plot points but suppress the axes to draw them manually
+# plot points but suppress the axes to draw them manually
 plot(x = slope_comparisons$estimate, 
      y = nrow(slope_comparisons):1,  # Plot from top to bottom
      xlim = range(slope_comparisons$lower.CL, slope_comparisons$upper.CL), # Set x-axis limits from data
@@ -1879,8 +1828,8 @@ arrows(x0 = slope_comparisons$lower.CL,
 abline(v = 0, lty = 2, col = "gray40")  # Make labels horizontal
 
 # 8. Add the "B" label in the top right corner
-# Note: You may need to adjust x and y coordinates depending on your data range
-# We use par("usr") to get the coordinates of the plot region
+
+# use par("usr") to get the coordinates of the plot region
 plot_coords <- par("usr")
 text(x = plot_coords[2] * 0.95, # 95% to the right edge
      y = plot_coords[4] * 0.97, # 95% to the top edge
@@ -2022,7 +1971,7 @@ zp_trends_compare <- emtrends(mod2,
 slope_comparisons <- as.data.frame(summary(zp_trends_compare$contrasts, infer = TRUE))
 
 # 4. Create the main plot area
-# We plot points but suppress the axes to draw them manually
+# plot points but suppress the axes to draw them manually
 plot(x = slope_comparisons$estimate, 
      y = nrow(slope_comparisons):1,  # Plot from top to bottom
      xlim = range(slope_comparisons$lower.CL, slope_comparisons$upper.CL), # Set x-axis limits from data
@@ -2049,8 +1998,8 @@ arrows(x0 = slope_comparisons$lower.CL,
 abline(v = 0, lty = 2, col = "gray40")  # Make labels horizontal
 
 # 8. Add the "B" label in the top right corner
-# Note: You may need to adjust x and y coordinates depending on your data range
-# We use par("usr") to get the coordinates of the plot region
+
+# use par("usr") to get the coordinates of the plot region
 plot_coords <- par("usr")
 text(x = plot_coords[2] * 0.95, # 95% to the right edge
      y = plot_coords[4] * 0.97, # 95% to the top edge
@@ -2177,7 +2126,7 @@ length_trends_compare <- emtrends(mod3,
 slope_comparisons <- as.data.frame(summary(length_trends_compare$contrasts, infer = TRUE))
 
 # 4. Create the main plot area
-# We plot points but suppress the axes to draw them manually
+# plot points but suppress the axes to draw them manually
 plot(x = slope_comparisons$estimate, 
      y = nrow(slope_comparisons):1,  # Plot from top to bottom
      xlim = range(slope_comparisons$lower.CL, slope_comparisons$upper.CL), # Set x-axis limits from data
@@ -2204,8 +2153,8 @@ arrows(x0 = slope_comparisons$lower.CL,
 abline(v = 0, lty = 2, col = "gray40")  # Make labels horizontal
 
 # 8. Add the "B" label in the top right corner
-# Note: You may need to adjust x and y coordinates depending on your data range
-# We use par("usr") to get the coordinates of the plot region
+
+# use par("usr") to get the coordinates of the plot region
 plot_coords <- par("usr")
 text(x = plot_coords[2] * 0.95, # 95% to the right edge
      y = plot_coords[4] * 0.97, # 95% to the top edge
@@ -2284,7 +2233,7 @@ bmb_lme$treatment <- as.factor(bmb_lme$treatment)
 
 # Model 1: Random Intercept for Pond
 mod_intercept <- lme(log_tp ~ treatment * log_doy, 
-                     random = ~1 | pond,  # <--- This is the key change
+                     random = ~1 | pond,  
                      weights = varIdent(form = ~1 | treatment),
                      data = bmb_lme, 
                      na.action = na.omit)
@@ -2296,7 +2245,7 @@ summary(mod_intercept)
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 bmb_lme$log_doy_c <- bmb_lme$log_doy - mean_log_doy
 
-# 3. Re-run your model with the new centered variable
+# 3. Re-run model with the new centered variable
 mod1 <- lme(log_tp ~ treatment * log_doy_c,  # <-- Use the new variable
                  random = ~1 | pond,
                  weights = varIdent(form = ~1 | treatment),
@@ -2333,7 +2282,7 @@ doy_seq <- seq(min(bmb_lme$doy, na.rm = TRUE),
                max(bmb_lme$doy, na.rm = TRUE), 
                by = 1)
 
-# **CRITICAL STEP**: Get the same mean used to center your original data
+#  Get the same mean used to center original data
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 
 # Create the new data grid for prediction
@@ -2342,7 +2291,7 @@ newdata1 <- expand.grid(
   treatment = levels(bmb_lme$treatment)
 )
 
-# **CRITICAL STEP**: Create the centered predictor variable for the new data
+#  Create the centered predictor variable for the new data
 newdata1$log_doy_c <- log(newdata1$doy) - mean_log_doy
 
 # 1b. Fixed-effects estimates and variance-covariance matrix
@@ -2350,7 +2299,7 @@ beta <- fixef(mod1)
 Vbeta <- vcov(mod1)
 
 # 1c. Model matrix for newdata1
-# **CRITICAL CHANGE**: Update the formula to match your model
+#  Update the formula to match model
 Xnew <- model.matrix(~ treatment * log_doy_c, data = newdata1)
 
 # 1d. Predicted fit (fixed effects only) and standard errors
@@ -2359,15 +2308,15 @@ se_fit <- sqrt( diag( Xnew %*% Vbeta %*% t(Xnew) ) )
 newdata1$lower <- newdata1$fit - 1.96 * se_fit
 newdata1$upper <- newdata1$fit + 1.96 * se_fit
 
-# 1e. Plot with ggplot2 (This code is unchanged)
-# (Assuming you have your color variables no1, high1, etc. in your environment)
+# 1e. Plot with ggplot2 
+
 windows(height = 6, width = 8)
 ggplot(newdata1, aes(x = doy, y = fit, color = treatment, fill = treatment)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) + 
   geom_line(size = 2) +
   labs(
     x = "Day of Year", 
-    y = "Predicted log(Total Phosphorus)", # **NOTE**: Your Y-axis is log_chl
+    y = "Predicted log(Total Phosphorus)", #  Y-axis is log_chl
     color = "Treatment", fill = "Treatment"
   ) +
   theme_minimal() +
@@ -2456,7 +2405,7 @@ doy_seq <- seq(min(bmb_lme$doy, na.rm = TRUE),
                max(bmb_lme$doy, na.rm = TRUE), 
                by = 1)
 
-# **CRITICAL STEP**: Get the same mean used to center your original data
+#  Get the same mean used to center original data
 mean_log_doy <- mean(bmb_lme$log_doy, na.rm = TRUE)
 
 # Create the new data grid for prediction
@@ -2465,7 +2414,7 @@ newdata2 <- expand.grid(
   treatment = levels(bmb_lme$treatment)
 )
 
-# **CRITICAL STEP**: Create the centered predictor variable for the new data
+#  Create the centered predictor variable for the new data
 newdata2$log_doy_c <- log(newdata2$doy) - mean_log_doy
 
 # 1b. Fixed-effects estimates and variance-covariance matrix
@@ -2473,7 +2422,7 @@ beta <- fixef(mod2)
 Vbeta <- vcov(mod2)
 
 # 2c. Model matrix for newdata1
-# **CRITICAL CHANGE**: Update the formula to match your model
+#  Update the formula to match model
 Xnew <- model.matrix(~ treatment * log_doy_c, data = newdata2)
 
 # 1d. Predicted fit (fixed effects only) and standard errors
@@ -2482,15 +2431,15 @@ se_fit <- sqrt( diag( Xnew %*% Vbeta %*% t(Xnew) ) )
 newdata2$lower <- newdata2$fit - 1.96 * se_fit
 newdata2$upper <- newdata2$fit + 1.96 * se_fit
 
-# 1e. Plot with ggplot2 (This code is unchanged)
-# (Assuming you have your color variables no1, high1, etc. in your environment)
+# 1e. Plot with ggplot2 
+
 windows(height = 6, width = 8)
 ggplot(newdata2, aes(x = doy, y = fit, color = treatment, fill = treatment)) +
   geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.2, color = NA) + 
   geom_line(size = 2) +
   labs(
     x = "Day of Year", 
-    y = "Predicted log(Length)", # **NOTE**: Your Y-axis is log_zp
+    y = "Predicted log(Length)", #  Y-axis is log_zp
     color = "Treatment", fill = "Treatment"
   ) +
   theme_minimal() +
@@ -2649,7 +2598,7 @@ tp_trends_compare <- emtrends(mod1,
 slope_comparisons <- as.data.frame(summary(tp_trends_compare$contrasts, infer = TRUE))
 
 # 4. Create the main plot area
-# We plot points but suppress the axes to draw them manually
+# plot points but suppress the axes to draw them manually
 plot(x = slope_comparisons$estimate, 
      y = nrow(slope_comparisons):1,  # Plot from top to bottom
      xlim = range(slope_comparisons$lower.CL, slope_comparisons$upper.CL), # Set x-axis limits from data
@@ -2676,8 +2625,8 @@ arrows(x0 = slope_comparisons$lower.CL,
 abline(v = 0, lty = 2, col = "gray40")  # Make labels horizontal
 
 # 8. Add the "B" label in the top right corner
-# Note: You may need to adjust x and y coordinates depending on your data range
-# We use par("usr") to get the coordinates of the plot region
+
+# use par("usr") to get the coordinates of the plot region
 plot_coords <- par("usr")
 text(x = plot_coords[2] * 0.95, # 95% to the right edge
      y = plot_coords[4] * 0.97, # 95% to the top edge
@@ -2818,7 +2767,7 @@ zp_trends_compare <- emtrends(mod2,
 slope_comparisons <- as.data.frame(summary(zp_trends_compare$contrasts, infer = TRUE))
 
 # 4. Create the main plot area
-# We plot points but suppress the axes to draw them manually
+# plot points but suppress the axes to draw them manually
 plot(x = slope_comparisons$estimate, 
      y = nrow(slope_comparisons):1,  # Plot from top to bottom
      xlim = range(slope_comparisons$lower.CL, slope_comparisons$upper.CL), # Set x-axis limits from data
@@ -2845,8 +2794,8 @@ arrows(x0 = slope_comparisons$lower.CL,
 abline(v = 0, lty = 2, col = "gray40")  # Make labels horizontal
 
 # 8. Add the "B" label in the top right corner
-# Note: You may need to adjust x and y coordinates depending on your data range
-# We use par("usr") to get the coordinates of the plot region
+
+# use par("usr") to get the coordinates of the plot region
 plot_coords <- par("usr")
 text(x = plot_coords[2] * 0.95, # 95% to the right edge
      y = plot_coords[4] * 0.97, # 95% to the top edge
@@ -2880,7 +2829,6 @@ mtext("Estimated Difference in Slope", side = 1, line = 2.2, cex = 0.9)
 if (!require(mgcv)) install.packages('mgcv')
 library(mgcv)
 
-#=============================================================
 # Be sure to run Step1_Munging.R first
 nutrient_gam = bmb %>%
   filter(!(is.na(tp))) %>%
@@ -2889,19 +2837,19 @@ nutrient_gam = bmb %>%
                              levels = c("nofish", "harvested", "ambient")))
 
 
-#Total Phosphorus GAM =====================
+##Total Phosphorus GAM =====================
 tp_gam <- gam(tp ~ treatment + s(doy, k = 12) + s(doy, by = fishtreat), 
                data = nutrient_gam, method = 'REML')
 summary(tp_gam)
 # gam.check(tp_gam)
 
-#Total Nitrogen GAM =======================
+##Total Nitrogen GAM =======================
 tn_gam <- gam(tn ~ treatment + s(doy, k = 12) + s(doy, by = fishtreat), 
               data = nutrient_gam, method = 'REML')
 summary(tn_gam)
 # gam.check(tn_gam)
 
-#============================================================
+# Plot the GAMs # ================================
 #Set up the plotting window
 windows(height = 4.5, width = 6.5)
 par(mfrow = c(1,2), 
