@@ -5,10 +5,7 @@ excrete_data = read.csv("bmb_excretion.csv")
 #================================================
 #microgram calculation (for the limnologists)
 excrete = excrete_data %>%
-  rename(nhx_pre = nxh_pre) %>%
-  mutate(nhx_pre = replace(nhx_pre, nhx_pre=="<2.4", "2.4")) %>%
-  mutate(nhx_pre = as.numeric(nhx_pre),
-         hours = duration_minutes/60) %>%
+        mutate(hours = duration_minutes/60) %>%
   select(-srp_pre, - srp_post, -E_C, -pre, -post)
 
 ref = excrete %>%
@@ -18,14 +15,15 @@ excrete = excrete %>%
   filter(!type=="reference")
 
 tub_vol = 40
+nhx_pre = 2.4
 
 #Excretion rate per individual - mass
 excrete$excretion_ind = 
-  ((excrete$nhx_post - excrete$nhx_pre) * tub_vol)/excrete$hours
+  ((excrete$nhx_post - nhx_pre) * tub_vol)/excrete$hours
 
 #Excretion rate per unit wet mass - mass
 excrete$excretion_massSpecific = 
-  ((excrete$nhx_post - excrete$nhx_pre) * tub_vol)/excrete$weight / excrete$hours
+  ((excrete$nhx_post - nhx_pre) * tub_vol)/excrete$weight / excrete$hours
 
 #==================================================
 # Pond calculations
@@ -58,7 +56,7 @@ plot(log10(excrete$excretion_ind) ~ log10(excrete$weight),
      xaxt = "n", yaxt = "n",
      xlab = "", ylab = "")
 mtext(side = 1, line = 3.5, "Fish Wet Weight (g)")
-mtext(side = 2, line = 3.5, expression(Excretion~Rate~"("*mu*mol~ind^-1~h^-1*")"))
+mtext(side = 2, line = 4, expression(Excretion~Rate~"("*mu*g~ind^-1~h^-1*")"))
 axis(side = 1, 
      at = c(log10(1500), log10(1600), log10(1700), log10(1800), log10(1900),
             log10(2000), log10(2100), log10(2200), log10(2300), log10(2400),
@@ -73,7 +71,9 @@ axis(side = 1,
                 "3500", "", "", "", "",
                 "4000", ""), las = 2)
 axis(side = 2, 
-     at = c(log10(100), log10(200), log10(300), log10(400), log10(500),
-            log10(600), log10(700), log10(800)),
-     labels = c("100", "200", "300", "400", "500", "600", "700", "800"), las = 2)
+     at = c(log10(3000), log10(4000), log10(5000),
+            log10(6000), log10(7000), log10(8000), log10(9000), log10(10000),
+            log10(11000), log10(12000)),
+     labels = c("3000", "4000", "","6000", "", "8000",
+                "","10,000","","12,000"), las = 2)
 

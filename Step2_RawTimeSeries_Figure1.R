@@ -144,3 +144,4 @@ points(comm_length[comm_length$pond=="A", "doy"],
 points(comm_length[comm_length$pond=="D", "doy"],
        log10(comm_length[comm_length$pond=="D", "commLength"]),
        col = no1, type = "l", lwd = 3)
+
